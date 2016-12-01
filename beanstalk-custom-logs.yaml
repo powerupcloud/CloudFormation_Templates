@@ -1,0 +1,221 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: AWS CloudFormation Template Elastic-Beanstalk
+Mappings:
+  AWSNATAMI:
+    ap-southeast-1:
+      AMI: ami-b953f2da
+    ap-south-1:
+      AMI: ami-34b4c05b
+    us-east-1:
+      AMI: ami-b73b63a0
+    us-west-2:
+      AMI: ami-5ec1673e
+Outputs:
+  URL:
+    Description: The URL of the Elastic Beanstalk environment
+    Value:
+      Fn::Join:
+      - ''
+      - - http://
+        - Fn::GetAtt:
+          - TomcatEnvironment
+          - EndpointURL
+Parameters:
+  InstanceKeyName:
+    Description: Amazon EC2 Key Pair
+    Type: AWS::EC2::KeyPair::KeyName
+  AlarmEmail:
+    Description: Enter email id to receive notifications.
+    Type: String
+  FilterPattern:
+    Description: Enter filter pattern to receive notification for.
+    Type: String
+  EnvironmentName:
+    Description: Enter a name for your beanstalk environment.
+    Default: "myEnv"
+    Type: String
+  InstanceType: 
+    Description: Select the Instance Type to launch.
+    Default: "t2.micro"
+    Type: String
+    AllowedValues:
+    - cc2.8xlarge
+    - c3.8xlarge
+    - c3.4xlarge
+    - c3.2xlarge
+    - c3.xlarge
+    - c3.large
+    - c4.8xlarge
+    - c4.4xlarge
+    - c4.2xlarge
+    - c4.xlarge
+    - c4.large
+    - r3.8xlarge
+    - r3.4xlarge
+    - r3.2xlarge
+    - r3.xlarge
+    - r3.large
+    - i2.8xlarge
+    - i2.4xlarge
+    - i2.2xlarge
+    - i2.xlarge
+    - cr1.8xlarge
+    - cg1.4xlarge
+    - m3.medium
+    - m3.large
+    - m3.xlarge
+    - m3.2xlarge
+    - hi1.4xlarge
+    - g2.2xlarge
+    - t2.micro
+    - t2.small
+    - t2.medium
+    - t2.large
+    - t2.nano
+    - d2.8xlarge
+    - d2.4xlarge
+    - d2.2xlarge
+    - d2.xlarge
+    - m4.large
+    - m4.xlarge
+    - m4.2xlarge
+    - m4.4xlarge
+    - m4.10xlarge
+Resources:
+  RolePolicies:
+    Properties:
+      PolicyDocument:
+        Statement:
+        - Action: [
+                "logs:PutLogEvents",
+                "logs:CreateLogGroup",
+                "logs:CreateLogStream"
+            ]
+          Effect: Allow
+          Resource: '*'
+        Version: '2012-10-17'
+      PolicyName: root
+      Roles:
+      - Ref: RootRole
+    Type: AWS::IAM::Policy
+  RootInstanceProfile:
+    Properties:
+      Path: /
+      Roles:
+      - Ref: RootRole
+    Type: AWS::IAM::InstanceProfile
+  RootRole:
+    Properties:
+      RoleName: "ec2role"
+      AssumeRolePolicyDocument:
+        Statement:
+        - Action:
+          - sts:AssumeRole
+          Effect: Allow
+          Principal:
+            Service:
+            - ec2.amazonaws.com
+        Version: '2012-10-17'
+      Path: /
+    Type: AWS::IAM::Role
+  AWSEBCWLTomcatErrorPercentAlarm:
+    DependsOn:
+    - CWTomcatMetricFilter
+    - AlarmNotificationTopic
+    Properties:
+      AlarmActions:
+      - Ref: AlarmNotificationTopic
+      AlarmDescription: Application is returning too many tomcat error responses (percentage
+        too high).
+      ComparisonOperator: GreaterThanThreshold
+      EvaluationPeriods: '1'
+      MetricName: CWLTomcatErrorMetric
+      Namespace: EBTomcatErrors
+      Period: '60'
+      Statistic: Average
+      Threshold: '0.10'
+      Unit: Count
+    Type: AWS::CloudWatch::Alarm
+  AlarmNotificationTopic:
+    Properties:
+      Subscription:
+      - Endpoint: 
+          Ref: AlarmEmail
+        Protocol: email
+      TopicName: CWTopic
+    Type: AWS::SNS::Topic
+  CWTomcatMetricFilter:
+    DependsOn: TomcatEnvironment
+    Properties:
+      FilterPattern: 
+        Ref: FilterPattern
+      LogGroupName:
+        Ref: CloudwatchLogGroup
+      MetricTransformations:
+      - MetricName: CWLTomcatErrorMetric
+        MetricNamespace: EBTomcatErrors
+        MetricValue: 1
+    Type: AWS::Logs::MetricFilter
+  CloudwatchLogGroup:
+    Properties:
+      LogGroupName: TomcatErrorLogGroup
+      RetentionInDays: '14'
+    Type: AWS::Logs::LogGroup
+  TomcatApplication:
+    Properties:
+      ApplicationName: tomcat-app
+      ApplicationVersions:
+      - Description: Version 1.0
+        SourceBundle:
+          S3Bucket:
+            Fn::Join:
+            - '-'
+            - - elasticbeanstalk-samples
+              - Ref: AWS::Region
+          S3Key: elasticbeanstalk-sampleapp.war
+        VersionLabel: Initial Version
+      Description: AWS Elastic Beanstalk Tomcat Application
+    Type: AWS::ElasticBeanstalk::Application
+  TomcatEnvironment:
+    DependsOn:
+    - TomcatApplication
+    Properties:
+      ApplicationName:
+        Ref: TomcatApplication
+      Description: AWS Elastic Beanstalk Environment running Tomcat Application
+      EnvironmentName:
+        Ref: EnvironmentName
+      OptionSettings:
+      - Namespace: aws:autoscaling:launchconfiguration
+        OptionName: EC2KeyName
+        Value:
+          Ref: InstanceKeyName
+      - Namespace: aws:autoscaling:launchconfiguration
+        OptionName: IamInstanceProfile
+        Value: 
+          Ref: RootInstanceProfile
+      - Namespace: aws:autoscaling:launchconfiguration
+        OptionName: InstanceType
+        Value:
+          Ref: InstanceType
+      - Namespace: aws:elb:listener:443
+        OptionName: InstancePort
+        Value: '80'
+      - Namespace: aws:elb:listener:443
+        OptionName: InstanceProtocol
+        Value: HTTP
+      - Namespace: aws:elb:listener:443
+        OptionName: ListenerProtocol
+        Value: HTTPS
+      - Namespace: aws:elb:listener:443
+        OptionName: SSLCertificateId
+        Value: arn:aws:acm:us-east-1:227099088681:certificate/a5fad31c-8da1-44bf-9bc8-3aad1e46ce4c
+      - Namespace: aws:elb:policies:LBSessionStickinessPolicy
+        OptionName: LoadBalancerPorts
+        Value: 443,80
+      - Namespace: aws:elb:policies:LBSessionStickinessPolicy
+        OptionName: Stickiness Cookie Expiration
+        Value: 0
+      SolutionStackName: 64bit Amazon Linux 2016.09 v2.3.1 running Tomcat 8 Java 8
+      VersionLabel: Initial Version
+    Type: AWS::ElasticBeanstalk::Environment
