@@ -34,6 +34,10 @@ Parameters:
     Description: Enter a name for your beanstalk environment.
     Default: "myEnv"
     Type: String
+  SSLCertificateArn:
+    Description: Enter the ACM ARN for the SSL Certificate to be added to the ELB 443 Listener.
+    Type: String
+    Default: "arn:aws:acm:xxxxxxxxx"
   InstanceType: 
     Description: Select the Instance Type to launch.
     Default: "t2.micro"
@@ -209,7 +213,8 @@ Resources:
         Value: HTTPS
       - Namespace: aws:elb:listener:443
         OptionName: SSLCertificateId
-        Value: arn:aws:acm:us-east-1:227099088681:certificate/a5fad31c-8da1-44bf-9bc8-3aad1e46ce4c
+        Value: 
+           Ref: SSLCertificateArn
       - Namespace: aws:elb:policies:LBSessionStickinessPolicy
         OptionName: LoadBalancerPorts
         Value: 443,80
